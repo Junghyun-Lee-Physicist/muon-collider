@@ -1,0 +1,36 @@
+
+// SensitiveDetector.cc
+#include "SensitiveDetector.hh"
+#include "G4HCofThisEvent.hh"
+#include "G4SDManager.hh"
+#include "G4Step.hh"
+#include "G4TouchableHistory.hh"
+
+SensitiveDetector::SensitiveDetector(const G4String& name)
+: G4VSensitiveDetector(name), fHitCollection(nullptr), fHCID(-1) {
+    collectionName.insert("HitCollection");
+}
+
+SensitiveDetector::~SensitiveDetector() {}
+
+void SensitiveDetector::Initialize(G4HCofThisEvent* hce) {
+    fHitCollection = new HitCollection(SensitiveDetectorName, collectionName[0]);
+    if (fHCID < 0) {
+        fHCID = G4SDManager::GetSDMpointer()->GetCollectionID(fHitCollection);
+    }
+    hce->AddHitsCollection(fHCID, fHitCollection);
+}
+
+G4bool SensitiveDetector::ProcessHits(G4Step* aStep, G4TouchableHistory*) {
+    auto newHit = new (*HitAllocator) Hit();
+    newHit->SetTrackID(aStep->GetTrack()->GetTrackID());
+    newHit->SetCellID(aStep->GetPreStepPoint()->GetTouchableHandle()->GetCopyNumber());
+    newHit->SetDepositedEnergy(aStep->GetTotalEnergyDeposit());
+    fHitCollection->insert(newHit);
+    return true;
+}
+
+void SensitiveDetector::EndOfEvent(G4HCofThisEvent*) {
+    // EndOfEvent 처리
+}
+

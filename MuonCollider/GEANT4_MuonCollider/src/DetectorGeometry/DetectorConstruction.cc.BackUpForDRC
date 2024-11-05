@@ -1,0 +1,219 @@
+
+#include "G4SystemOfUnits.hh"
+#include "G4NistManager.hh"
+#include "G4Box.hh"
+#include "G4Tubs.hh"
+#include "G4LogicalVolume.hh"
+#include "G4PVPlacement.hh"
+
+#include "G4GeometryManager.hh"
+#include "G4PhysicalVolumeStore.hh"
+#include "G4LogicalVolumeStore.hh"
+#include "G4SolidStore.hh"
+#include "G4IntersectionSolid.hh"
+
+#include "DetectorConstruction.hh"
+
+DetectorConstruction::DetectorConstruction()
+    : G4VUserDetectorConstruction(), fMaterialManager(nullptr), fDimensionsManager(nullptr)
+{
+    SetMaterials();
+    SetDimensions();
+    SetupColorForVolume();
+    Check_Overlap_of_Volumes = true;
+}
+
+DetectorConstruction::~DetectorConstruction() {
+    MaterialManager::DeleteInstance();
+    DimensionsManager::DeleteInstance();
+ 
+    delete fColorOrange;
+    delete fColorBlue;   
+
+}
+
+void DetectorConstruction::SetMaterials(){
+
+    fMaterialManager        = MaterialManager::GetInstance();
+ 
+    fWorldMaterial          = fMaterialManager->GetMaterial("Vacuum");
+    fModuleMaterial         = fMaterialManager->GetMaterial("Tungsten");
+    fCherenCladdingMaterial  = fMaterialManager->GetMaterial("FluorinatedPolymer");
+    fScintCladdingMaterial   = fMaterialManager->GetMaterial("PMMA");
+    fCherenCoreMaterial     = fMaterialManager->GetMaterial("PMMA");
+    fScintCoreMaterial      = fMaterialManager->GetMaterial("Polystyrene");
+  
+}
+
+void DetectorConstruction::SetDimensions(){
+
+    fDimensionsManager        = DimensionsManager::GetInstance();
+
+    fWorldSize_Width          = fDimensionsManager->GetWorldSize_Width();
+    fWorldSize_Height         = fDimensionsManager->GetWorldSize_Height();
+    fWorldSize_Length         = fDimensionsManager->GetWorldSize_Length();
+    fModuleSize_Width         = fDimensionsManager->GetModuleSize_Width();
+    fModuleSize_Height        = fDimensionsManager->GetModuleSize_Height();
+    fModuleSize_Length        = fDimensionsManager->GetModuleSize_Length();
+    fNumberOfModule_Row       = fDimensionsManager->GetNumberOfModule_Row();
+    fNumberOfModule_Column    = fDimensionsManager->GetNumberOfModule_Column();
+    fFiberCladdingSize_Radius = fDimensionsManager->GetFiberCladdingSize_Radius();
+    fFiberCladdingSize_Length = fDimensionsManager->GetFiberCladdingSize_Length();
+    fCherenFiberSize_Radius   = fDimensionsManager->GetCherenFiberSize_Radius();
+    fCherenFiberSize_Length   = fDimensionsManager->GetCherenFiberSize_Length();
+    fScintFiberSize_Radius    = fDimensionsManager->GetScintFiberSize_Radius();
+    fScintFiberSize_Length    = fDimensionsManager->GetScintFiberSize_Length();
+
+}
+
+void DetectorConstruction::SetupColorForVolume(){
+
+    // Purpose for Making the [ World Volume ] Transparent
+    fColorTransparency = new G4VisAttributes(G4Colour(1.0, 1.0, 1.0, 0.0));
+    fColorTransparency->SetVisibility(true);
+
+    // Color for Cladding
+    fColorGray = new G4VisAttributes(G4Colour(0.3,0.3,0.3,0.3));
+    fColorGray->SetVisibility(true);
+ 
+    // Color for Cherenkov Fiber's Core
+    fColorOrange = new G4VisAttributes(G4Colour(1.0,0.5,0.,1.0));
+    fColorOrange->SetVisibility(true);
+
+    // Color for Scintilation Fiber's Core
+    fColorBlue = new G4VisAttributes(G4Colour(0.,0.,1.0,1.0));
+    fColorBlue->SetVisibility(true);
+
+}
+
+G4VPhysicalVolume *DetectorConstruction::Construct()
+{
+
+    // The below objects primarily serve to initialize the geometric structure
+    // and clean up unnecessary data before running simulations in Geant4
+    // These methods are used to initialize existing configurations
+    // before starting a new run of the simulation,serving as a shield against data conflicts or unnecessary resource use.
+    // This understanding of their purpose becomes crucial when simulations are repeatedly run
+    // or when dynamic changes to the geometric structure are required.
+    G4GeometryManager::GetInstance()->OpenGeometry();
+    G4PhysicalVolumeStore::GetInstance()->Clean();
+    G4LogicalVolumeStore::GetInstance()->Clean();
+    G4SolidStore::GetInstance()->Clean();
+
+
+    // Width, Height, Length --> X, Y, Z axis 
+    
+    // World
+    WorldSol = new G4Box("WorldSolid", 0.5 * (*fWorldSize_Width), 0.5 * (*fWorldSize_Height), 0.5 * (*fWorldSize_Length));
+    WorldLog = new G4LogicalVolume(WorldSol, fWorldMaterial, "WorldLogical");
+    WorldPhy = new G4PVPlacement(0, G4ThreeVector(), WorldLog, "WorldPhysical", nullptr, false, 0, Check_Overlap_of_Volumes);
+    WorldLog->SetVisAttributes(fColorTransparency);
+
+
+    // Modules
+    ConstructModules();
+
+
+    // Fibers
+    FiberCladdingSol = new G4Tubs("FiberCladding", 0, (*fFiberCladdingSize_Radius), (*fFiberCladdingSize_Length)/2., 0 *deg, 360. *deg);
+    CherenFiberSol   = new G4Tubs("CherenFiber", 0, (*fCherenFiberSize_Radius), (*fCherenFiberSize_Length)/2., 0 *deg, 360. *deg);
+    ScintFiberSol    = new G4Tubs("ScintFiber", 0, (*fScintFiberSize_Radius), (*fScintFiberSize_Length)/2., 0 *deg, 360. *deg);
+
+
+    int NofFiber = (*fModuleSize_Width)  * 2./3.;
+    int NofPlate = (*fModuleSize_Height) * 2./3.;
+    std::vector<double> fFiberX;
+    std::vector<double> fFiberY;
+    std::vector<bool> fFiberWhich;
+    G4bool fWhich = false;  
+    for (int k = 0; k < NofPlate; k++) {
+      for (int j = 0; j < NofFiber; j++) { 
+        /*
+          ? fX : # of plate , fY : # of fiber in the plate
+        */
+        double fX = -(*fModuleSize_Height)/2. + k*1.5*mm + 0.75*mm;
+        double fY = -(*fModuleSize_Width)/2. + j*1.5*mm + 0.75*mm;
+        fWhich = !fWhich;
+        fFiberX.push_back(fX);
+        fFiberY.push_back(fY);
+        fFiberWhich.push_back(fWhich);
+      }
+      if ( NofFiber%2==0 ) { fWhich = !fWhich; }   
+    }
+
+    for (unsigned int j = 0; j<fFiberX.size(); j++) {
+
+        // Below is for the C Fiber
+        if ( !fFiberWhich.at(j) ) {
+      
+            FiberCladdingIntersectionSol = new G4IntersectionSolid("FiberCladdingIntersection", FiberCladdingSol, ModuleSol, 0, G4ThreeVector(-fFiberX.at(j),-fFiberY.at(j),0.));
+            FiberCladdingIntersectionLog.push_back( new G4LogicalVolume(FiberCladdingIntersectionSol, fCherenCladdingMaterial, "FiberCladding") );
+            //std::cout<<"Fiber intersection size : "<<FiberCladdingIntersectionLog.size()<<std::endl;
+            new G4PVPlacement(0,G4ThreeVector(fFiberX.at(j),fFiberY.at(j),0), FiberCladdingIntersectionLog.at(j),"Fiber", ModuleLog, false, j, Check_Overlap_of_Volumes);
+  
+            CherenFiberIntersectionSol = new G4IntersectionSolid("CherenFiber",CherenFiberSol, ModuleSol, 0, G4ThreeVector(-fFiberX.at(j),-fFiberY.at(j),0.));
+            FiberIntersectionLog.push_back( new G4LogicalVolume(CherenFiberIntersectionSol, fCherenCoreMaterial, "CherenFiber") );
+            //std::cout<<"Fiber intersection size : "<<FiberCladdingIntersectionLog.size()<<std::endl;
+            //std::cout<<"Cheren intersection size : "<<CherenFiberIntersectionLog.size()<<std::endl;
+            new G4PVPlacement(0,G4ThreeVector(0.,0.,0.),FiberIntersectionLog.at(j), "CherenFiber", FiberCladdingIntersectionLog.at(j), false, j, Check_Overlap_of_Volumes);
+          
+            FiberCladdingIntersectionLog.at(j)->SetVisAttributes(fColorGray);
+            FiberIntersectionLog.at(j)->SetVisAttributes(fColorBlue);   
+  
+        }
+        // Below is for the S Fiber
+        else {
+        
+            FiberCladdingIntersectionSol = new G4IntersectionSolid("FiberCladdingIntersection", FiberCladdingSol, ModuleSol, 0, G4ThreeVector(-fFiberX.at(j),-fFiberY.at(j),0.));
+            FiberCladdingIntersectionLog.push_back( new G4LogicalVolume(FiberCladdingIntersectionSol, fScintCladdingMaterial, "FiberCladding") );
+            //std::cout<<"Fiber intersection size : "<<FiberCladdingIntersectionLog.size()<<std::endl;
+            new G4PVPlacement(0,G4ThreeVector(fFiberX.at(j),fFiberY.at(j),0), FiberCladdingIntersectionLog.at(j),"Fiber", ModuleLog, false, j, Check_Overlap_of_Volumes);
+  
+            ScintFiberIntersectionSol = new G4IntersectionSolid("ScintFiber", ScintFiberSol, ModuleSol, 0, G4ThreeVector(-fFiberX.at(j),-fFiberY.at(j),0.));
+            FiberIntersectionLog.push_back( new G4LogicalVolume(ScintFiberIntersectionSol, fScintCoreMaterial, "ScintFiber") );
+            //std::cout<<"Fiber intersection size : "<<FiberCladdingIntersectionLog.size()<<std::endl;
+            //std::cout<<"Scint intersection size : "<<ScintFiberIntersectionLog.size()<<std::endl;
+            new G4PVPlacement(0,G4ThreeVector(0.,0.,0.), FiberIntersectionLog.at(j), "ScintFiber", FiberCladdingIntersectionLog.at(j),false,j,Check_Overlap_of_Volumes);
+
+            FiberCladdingIntersectionLog.at(j)->SetVisAttributes(fColorGray);
+            FiberIntersectionLog.at(j)->SetVisAttributes(fColorOrange);   
+ 
+        }
+  
+        std::cout<<"---------------------------------------------------"<<std::endl;
+    }
+    
+
+    return WorldPhy;
+}
+
+
+void DetectorConstruction::ConstructModules() {
+
+    ModuleSol = new G4Box("ModuleSolid", 0.5 * (*fModuleSize_Width), 0.5 * (*fModuleSize_Height), 0.5 * (*fModuleSize_Length));
+    ModuleLog = new G4LogicalVolume(ModuleSol, fModuleMaterial, "ModuleLogical");
+
+    for (int row = 0; row < *fNumberOfModule_Row; ++row) {
+        for (int col = 0; col < *fNumberOfModule_Column; ++col) {
+
+            G4ThreeVector ModulesPosition(
+                -(*fModuleSize_Height) * (*fNumberOfModule_Row) / 2.0 + row * (*fModuleSize_Height) + (*fModuleSize_Height) / 2.0,
+                -(*fModuleSize_Width) * (*fNumberOfModule_Column) / 2.0 + col * (*fModuleSize_Width) + (*fModuleSize_Width) / 2.0,
+                (*fModuleSize_Length) / 2.0 
+            );
+            int ModuleNumber = row * (*fNumberOfModule_Column) + col;
+            // The number of each module is assigned
+            // starting from the top left, 
+            // moving to the right, in the order of 1, 2, and so on.
+
+            // Declare physical volume of each [ modules ]
+            new G4PVPlacement(0, ModulesPosition, ModuleLog, "ModulePhysical", WorldLog, false, ModuleNumber, Check_Overlap_of_Volumes);
+        }
+    }
+
+}
+
+
+void DetectorConstruction::ConstructSDandField()
+{
+}

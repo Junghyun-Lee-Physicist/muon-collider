@@ -1,0 +1,108 @@
+#ifndef DETECTORCONSTRUCTION_HH
+#define DETECTORCONSTRUCTION_HH
+
+#include "G4VUserDetectorConstruction.hh"
+#include "MaterialManager.hh"
+#include "DimensionsManager.hh"
+#include "G4VSolid.hh"
+#include "G4VisAttributes.hh"
+
+#include <vector>
+
+class G4Box;
+class G4Tubs;
+class G4VPhysicalVolume;
+class G4LogicalVolume;
+class G4Material;
+
+class DetectorConstruction : public G4VUserDetectorConstruction
+{
+public:
+    DetectorConstruction();
+    virtual ~DetectorConstruction() override;
+
+    virtual G4VPhysicalVolume *Construct() override;
+    virtual void ConstructSDandField() override;
+
+private:
+    
+    // For the Material set
+    void SetMaterials();
+    MaterialManager* fMaterialManager;
+    G4Material* fWorldMaterial;
+    G4Material* fModuleMaterial;
+    G4Material* fCherenCladdingMaterial;
+    G4Material* fScintCladdingMaterial;
+    G4Material* fCherenCoreMaterial;
+    G4Material* fScintCoreMaterial;
+
+
+    // For the Detector Dimensions
+    void SetDimensions();
+    DimensionsManager* fDimensionsManager;
+    const double* fWorldSize_Width;
+    const double* fWorldSize_Height;
+    const double* fWorldSize_Length;
+    const double* fModuleSize_Width;
+    const double* fModuleSize_Height;
+    const double* fModuleSize_Length;
+    const int*    fNumberOfModule_Row;
+    const int*    fNumberOfModule_Column;
+    const double* fFiberCladdingSize_Radius;
+    const double* fFiberCladdingSize_Length;
+    const double* fCherenFiberSize_Radius;
+    const double* fCherenFiberSize_Length;
+    const double* fScintFiberSize_Radius;
+    const double* fScintFiberSize_Length;
+
+    void SetupColorForVolume();
+    G4VisAttributes* fColorTransparency;
+    G4VisAttributes* fColorGray;
+    G4VisAttributes* fColorOrange;
+    G4VisAttributes* fColorBlue;
+
+    // Mother volume switch
+    G4bool useMotherVolume;
+
+    // For checking overlap of volumes
+    G4bool Check_Overlap_of_Volumes;
+
+
+    // For the Geometry components
+    //   --> World volume
+    G4Box*             WorldSol;
+    G4LogicalVolume*   WorldLog;
+    G4VPhysicalVolume* WorldPhy;
+
+    //   --> Module
+    G4Box*             ModuleSol;
+    G4LogicalVolume*   ModuleLog;
+    G4VPhysicalVolume* ModulePhy;
+    void ConstructModules();
+
+    G4LogicalVolume* voxelLog;
+
+    //   --> Fiber
+    //       
+    //       1. The fibers are composed of Cherenkov and Scintillation Cores, 
+    //       which are enclosed within a module and surrounded by Cladding.
+    //
+    //       2. Technically, we will use [ G4IntersectionSolid ]
+    //       to define the volumes related to the Fibers 
+    //       as the areas overlapping with the Module
+    G4Tubs*                       FiberCladdingSol;
+    G4VSolid*                     FiberCladdingIntersectionSol;
+    std::vector<G4LogicalVolume*> FiberCladdingIntersectionLog;
+    G4Tubs*                       CherenFiberSol;
+    G4VSolid*                     CherenFiberIntersectionSol;
+    //std::vector<G4LogicalVolume*> CherenFiberIntersectionLog;
+    G4Tubs*                       ScintFiberSol;
+    G4VSolid*                     ScintFiberIntersectionSol;
+    //std::vector<G4LogicalVolume*> ScintFiberIntersectionLog;
+    std::vector<G4LogicalVolume*> FiberIntersectionLog;
+
+};
+
+
+
+#endif

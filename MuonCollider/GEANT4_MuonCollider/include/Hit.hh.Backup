@@ -1,0 +1,49 @@
+// Hit.hh
+#ifndef HIT_HH
+#define HIT_HH
+
+#include "G4VHit.hh"
+#include "G4THitsCollection.hh"
+#include "G4Allocator.hh"
+#include "G4SystemOfUnits.hh"
+
+class Hit : public G4VHit {
+public:
+    Hit();
+    virtual ~Hit();
+    Hit(const Hit& right);
+    const Hit& operator=(const Hit& right);
+    G4int operator==(const Hit& right) const;
+
+    inline void* operator new(size_t);
+    inline void operator delete(void*);
+
+    void SetTrackID(G4int id) { fTrackID = id; }
+    void SetCellID(G4int id) { fCellID = id; }
+    void SetDepositedEnergy(G4double energy) { fDepositedEnergy = energy; }
+
+    G4int GetTrackID() const { return fTrackID; }
+    G4int GetCellID() const { return fCellID; }
+    G4double GetDepositedEnergy() const { return fDepositedEnergy; }
+
+private:
+    G4int fTrackID;
+    G4int fCellID;
+    G4double fDepositedEnergy;
+};
+
+typedef G4THitsCollection<Hit> HitCollection;
+
+extern G4ThreadLocal G4Allocator<Hit>* HitAllocator;
+
+inline void* Hit::operator new(size_t) {
+    if (!HitAllocator) HitAllocator = new G4Allocator<Hit>;
+    return (void*)HitAllocator->MallocSingle();
+}
+
+inline void Hit::operator delete(void* hit) {
+    HitAllocator->FreeSingle((Hit*)hit);
+}
+
+#endif // HIT_HH
+

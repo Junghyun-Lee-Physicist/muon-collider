@@ -1,0 +1,15 @@
+#!/bin/bash
+
+mkdir exeInstall && cd exeInstall
+InstallDir=$(pwd)
+cd ..
+
+mkdir buildTemp && cd buildTemp
+cmake -DWITH_GEANT4_UIVIS=ON -DCMAKE_INSTALL_PREFIX="${InstallDir}" ..
+make -j4
+make install
+cd ..
+##rm -rf buildTemp
+
+echo "Now The execution file for GEANT4 muon collider simulation"
+echo "At the [ Install directory : ${InstallDir} ]"

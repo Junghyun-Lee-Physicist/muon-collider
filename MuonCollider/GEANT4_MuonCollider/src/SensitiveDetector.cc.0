@@ -1,0 +1,96 @@
+
+#include "G4SystemOfUnits.hh"
+#include "SensitiveDetector.hh"
+#include "G4HCofThisEvent.hh"
+#include "G4Step.hh"
+#include "G4TouchableHistory.hh"
+#include "G4SDManager.hh"
+#include "G4ios.hh"
+#include "G4VisManager.hh"
+#include "G4VVisManager.hh"
+#include "G4Circle.hh"
+#include "G4Colour.hh"
+#include "G4VisAttributes.hh"
+
+#include "TFile.h"
+#include "TTree.h"
+#include "TSystem.h"
+#include "TROOT.h"
+#include "TObject.h"
+
+ClassImp(CellHit)  // ROOT 클래스 구현
+
+CellHit::CellHit()
+    : cellID(-1), edep(0.0) {}
+
+CellHit::~CellHit() {}
+
+void CellHit::Draw() {
+    // Visualization code
+    if (G4VVisManager::GetConcreteInstance()) {
+        G4Circle circle;
+        circle.SetScreenSize(4.);
+        circle.SetFillStyle(G4Circle::filled);
+        G4VisAttributes attribs(G4Colour(0., 1., 0.));
+        circle.SetVisAttributes(attribs);
+        G4VVisManager::GetConcreteInstance()->Draw(circle);
+    }
+}
+
+void CellHit::Print() {
+    G4cout << "Cell ID: " << cellID << " Energy Deposit: " << edep / keV << " keV" << G4endl;
+}
+
+G4Allocator<CellHit> CellHitAllocator;
+
+SensitiveDetector::SensitiveDetector(const G4String& name)
+    : G4VSensitiveDetector(name), hitsCollection(nullptr), rootFile(nullptr), tree(nullptr), cellID(-1), edep(0.0) {
+    collectionName.insert("CellHitsCollection");
+
+    // ROOT 파일 및 트리 초기화
+    rootFile = new TFile("EnergyDeposition.root", "RECREATE");
+    tree = new TTree("EnergyDeposition", "Energy Deposition in Cells");
+    tree->Branch("cellID", &cellID, "cellID/I");
+    tree->Branch("edep", &edep, "edep/D");
+}
+
+SensitiveDetector::~SensitiveDetector() {
+    // ROOT 파일 닫기
+    if (rootFile) {
+        rootFile->Write();
+        rootFile->Close();
+        delete rootFile;
+    }
+}
+
+void SensitiveDetector::Initialize(G4HCofThisEvent* hce) {
+    hitsCollection = new CellHitsCollection(SensitiveDetectorName, collectionName[0]);
+    G4int hcID = G4SDManager::GetSDMpointer()->GetCollectionID(collectionName[0]);
+    hce->AddHitsCollection(hcID, hitsCollection);
+}
+
+G4bool SensitiveDetector::ProcessHits(G4Step* step, G4TouchableHistory*) {
+    G4double stepEdep = step->GetTotalEnergyDeposit(); // 변수 이름 변경
+    if (stepEdep == 0.0) return false;
+
+    CellHit* newHit = new CellHit();
+    newHit->cellID = step->GetPreStepPoint()->GetTouchableHandle()->GetCopyNumber();
+    newHit->edep = stepEdep; // 변수 이름 변경
+
+    hitsCollection->insert(newHit);
+
+    // ROOT 트리에 데이터 저장
+    cellID = newHit->cellID;
+    edep = newHit->edep;
+    tree->Fill();
+
+    return true;
+}
+
+void SensitiveDetector::EndOfEvent(G4HCofThisEvent*) {
+    // Optional: Print all hits
+    for (size_t i = 0; i < hitsCollection->entries(); ++i) {
+        (*hitsCollection)[i]->Print();
+    }
+}
+

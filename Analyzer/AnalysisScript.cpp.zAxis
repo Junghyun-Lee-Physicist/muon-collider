@@ -1,0 +1,155 @@
+#include <TFile.h>
+#include <TTree.h>
+#include <TH1D.h>
+#include <TH2D.h>
+#include <TH3D.h>
+#include <vector>
+#include <cmath>
+#include <iostream>
+#include <map>
+
+struct Point {
+    double x, y, z, energy, time;
+    bool visited = false;
+    int clusterID = -1; // -1 means unassigned
+};
+
+double distanceZ(const Point& a, const Point& b) {
+    return std::fabs(a.z - b.z);
+}
+
+std::vector<Point*> regionQueryZ(std::vector<Point>& points, const Point& point, double eps) {
+    std::vector<Point*> neighbors;
+    for (auto& p : points) {
+        if (distanceZ(point, p) <= eps) {
+            neighbors.push_back(&p);
+        }
+    }
+    return neighbors;
+}
+
+void expandClusterZ(std::vector<Point>& points, Point& point, std::vector<Point*>& neighbors, int clusterID, double eps, int minPts) {
+    point.clusterID = clusterID;
+    std::vector<Point*> seeds = neighbors;
+
+    for (size_t i = 0; i < seeds.size(); ++i) {
+        Point* currentP = seeds[i];
+        if (!currentP->visited) {
+            currentP->visited = true;
+            std::vector<Point*> currentNeighbors = regionQueryZ(points, *currentP, eps);
+            if (currentNeighbors.size() >= minPts) {
+                seeds.insert(seeds.end(), currentNeighbors.begin(), currentNeighbors.end());
+            }
+        }
+        if (currentP->clusterID == -1) {
+            currentP->clusterID = clusterID;
+        }
+    }
+}
+
+void DBSCAN_Z(std::vector<Point>& points, double eps, int minPts) {
+    int clusterID = 0;
+    for (auto& point : points) {
+        if (point.visited) {
+            continue;
+        }
+        point.visited = true;
+        std::vector<Point*> neighbors = regionQueryZ(points, point, eps);
+        if (neighbors.size() < minPts) {
+            point.clusterID = 0; // Mark as noise
+        } else {
+            clusterID++;
+            expandClusterZ(points, point, neighbors, clusterID, eps, minPts);
+        }
+    }
+}
+
+void AnalyzeNtuple() {
+    TFile* file = TFile::Open("ntupleMuonCollider_5210.root");
+    TTree* tree = (TTree*)file->Get("MuonSim");
+
+    std::vector<double>* Position_x = nullptr;
+    std::vector<double>* Position_y = nullptr;
+    std::vector<double>* Position_z = nullptr;
+    std::vector<double>* KineticEnergy = nullptr;
+    std::vector<double>* EnergyDeposit = nullptr;
+    std::vector<double>* LocalTime = nullptr;
+    std::vector<double>* GlobalTime = nullptr;
+    std::vector<int>* ProcessNumber = nullptr;
+
+    tree->SetBranchAddress("Position_x", &Position_x);
+    tree->SetBranchAddress("Position_y", &Position_y);
+    tree->SetBranchAddress("Position_z", &Position_z);
+    tree->SetBranchAddress("KineticEnergy", &KineticEnergy);
+    tree->SetBranchAddress("EnergyDeposit", &EnergyDeposit);
+    tree->SetBranchAddress("LocalTime", &LocalTime);
+    tree->SetBranchAddress("GlobalTime", &GlobalTime);
+    tree->SetBranchAddress("ProcessNumber", &ProcessNumber);
+
+    TH1D* hTotalEnergyDeposit = new TH1D("hTotalEnergyDeposit", "Total Energy Deposit", 100, 0, 1000);
+    TH3D* hClusterPositions = new TH3D("hClusterPositions", "Cluster Positions", 100, -50, 50, 100, -50, 50, 100, -50, 50);
+    TH1D* hClusterEnergyDeposits = new TH1D("hClusterEnergyDeposits", "Energy Deposit per Cluster", 100, 0, 100);
+
+    Long64_t nEntries = tree->GetEntries();
+    for (Long64_t entry = 0; entry < nEntries; ++entry) {
+        tree->GetEntry(entry);
+
+        if (Position_x->size() != Position_y->size() || Position_x->size() != Position_z->size() ||
+            Position_x->size() != KineticEnergy->size() || Position_x->size() != EnergyDeposit->size() ||
+            Position_x->size() != LocalTime->size() || Position_x->size() != GlobalTime->size() ||
+            Position_x->size() != ProcessNumber->size()) {
+            std::cerr << "Error: Vector sizes do not match!" << std::endl;
+            return;
+        }
+
+        std::vector<Point> points;
+        double totalEnergyDeposit = 0.0;
+
+        for (size_t i = 0; i < Position_x->size(); ++i) {
+            points.push_back(Point{
+                (*Position_x)[i], (*Position_y)[i], (*Position_z)[i],
+                (*EnergyDeposit)[i], (*GlobalTime)[i]
+            });
+            totalEnergyDeposit += (*EnergyDeposit)[i];
+        }
+
+        hTotalEnergyDeposit->Fill(totalEnergyDeposit / 1000.0); // Transform GeV scale from MeV
+
+        double eps = 0.01; // 1 cm in meters
+        int minPts = 1;
+        DBSCAN_Z(points, eps, minPts);
+
+        std::map<int, double> clusterEnergyMap;
+
+        for (const auto& point : points) {
+            // 추가 검사: z 좌표가 50을 초과하지 않도록 확인
+            if (point.clusterID > 0) {
+                if (point.z > 50) {
+                    std::cerr << "Warning: Point with z = " << point.z << " exceeds the limit of 50." << std::endl;
+                }
+                hClusterPositions->Fill(point.x, point.y, point.z);
+                clusterEnergyMap[point.clusterID] += point.energy;
+            }
+        }
+
+        for (const auto& pair : clusterEnergyMap) {
+            hClusterEnergyDeposits->Fill(pair.second);
+        }
+
+        if (entry % 100 == 0) { // 100개의 이벤트마다 진행 상황 출력
+            std::cout << "Progress: " << (100 * entry / nEntries) << "%" << std::endl;
+        }
+    }
+
+    TFile* outFile = new TFile("results.root", "RECREATE");
+    hTotalEnergyDeposit->Write();
+    hClusterPositions->Write();
+    hClusterEnergyDeposits->Write();
+    outFile->Close();
+}
+
+int main() {
+    AnalyzeNtuple();
+    return 0;
+}
+

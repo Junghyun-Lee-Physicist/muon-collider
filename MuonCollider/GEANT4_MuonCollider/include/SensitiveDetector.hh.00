@@ -1,0 +1,47 @@
+#ifndef SENSITIVEDETECTOR_HH
+#define SENSITIVEDETECTOR_HH
+
+#include "G4VSensitiveDetector.hh"
+#include "G4THitsCollection.hh"
+#include "G4VHit.hh"
+#include "TFile.h"
+#include "TTree.h"
+#include "TObject.h"
+#include "TSystem.h"
+
+class CellHit : public G4VHit, public TObject {
+public:
+    CellHit();
+    virtual ~CellHit();
+    virtual void Draw() override;
+    virtual void Print() override;
+
+    G4int cellID;
+    G4double edep;
+
+    ClassDef(CellHit, 1)  // ROOT 클래스 매크로
+};
+
+typedef G4THitsCollection<CellHit> CellHitsCollection;
+
+class SensitiveDetector : public G4VSensitiveDetector {
+public:
+    SensitiveDetector(const G4String& name);
+    virtual ~SensitiveDetector();
+
+    virtual void Initialize(G4HCofThisEvent* hce) override;
+    virtual G4bool ProcessHits(G4Step* step, G4TouchableHistory* history) override;
+    virtual void EndOfEvent(G4HCofThisEvent* hce) override;
+
+private:
+    CellHitsCollection* hitsCollection;
+
+    // ROOT 관련 데이터 멤버
+    TFile* rootFile;
+    TTree* tree;
+    G4int cellID;
+    G4double edep;
+};
+
+#endif // SENSITIVEDETECTOR_HH
+

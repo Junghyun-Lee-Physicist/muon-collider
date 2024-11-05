@@ -1,0 +1,59 @@
+
+#include "G4ParticleGun.hh"
+#include "G4ParticleTable.hh"
+#include "G4SystemOfUnits.hh"
+#include "G4Event.hh"
+
+#include "PrimaryGeneratorAction.hh"
+
+
+PrimaryGeneratorAction::PrimaryGeneratorAction()
+    : G4VUserPrimaryGeneratorAction(),
+      fParticleGun(nullptr)
+{
+ 
+    G4int n_particle = 1;
+    fParticleGun = new G4ParticleGun(n_particle);
+
+    // Set default particle
+    G4ParticleTable* particleTable = G4ParticleTable::GetParticleTable();
+    G4ParticleDefinition* particle = particleTable->FindParticle("mu-");
+    ////G4ParticleDefinition* particle = particleTable->FindParticle("geantino");
+
+
+    fParticleGun->SetParticleDefinition(particle);
+    fParticleGun->SetParticleEnergy(1.0 * TeV);  // Set energy (example: 1 TeV)
+
+    //fParticleGun->SetParticlePosition(G4ThreeVector(0, 0, -1.00*m));  // Set initial position
+}
+
+PrimaryGeneratorAction::~PrimaryGeneratorAction()
+{
+    delete fParticleGun;
+}
+
+void PrimaryGeneratorAction::GeneratePrimaries(G4Event *anEvent)
+{
+
+    G4double cellSize = 2.0 * cm;
+    G4double planeSize = 10.0 * cm;
+    G4int numCellsPerSide = static_cast<G4int>(planeSize / cellSize);
+
+    // Loop over grid points
+    for (G4int i = 0; i <= numCellsPerSide; ++i) {
+        for (G4int j = 0; j <= numCellsPerSide; ++j) {
+            G4double x = -(0.5*planeSize) + i * cellSize;
+            G4double y = -(0.5*planeSize) + j * cellSize;
+            G4double z = -1.0 * m;  // Initial z position
+
+            G4cout<<"Rooting position : "<<x<<", "<<y<<G4endl;
+            fParticleGun->SetParticlePosition(G4ThreeVector(x, y, z));  // Set initial position
+            fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0, 0, 1));  // Set direction
+
+            // Fire the particle
+            fParticleGun->GeneratePrimaryVertex(anEvent);  // Assuming 'anEvent' is available in this context
+        }
+    }
+
+    fParticleGun->GeneratePrimaryVertex(anEvent);
+}
